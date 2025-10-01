@@ -9,7 +9,7 @@ and move into the project folder with:
 
 `cd data-pipeline`
 
-The dataset comes from NYC Yellow Taxi Trip Data on Kaggle and should be placed in the `data/` folder. Once the dataset is in place, start the pipeline using Docker Compose:
+Create a folder named `data` and add the dataset files to it. Once the dataset is in place, start the pipeline using Docker Compose:
 
 `docker-compose up --build`
 
@@ -20,4 +20,6 @@ The Streamlit dashboard will be available at:
 You can follow logs for each container using:
 
 `docker-compose logs -f`
+
+
 
