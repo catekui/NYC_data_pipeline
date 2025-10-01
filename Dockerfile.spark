@@ -1,0 +1,26 @@
+# Use a slim Python image to save space
+FROM python:3.9-slim
+
+USER root
+WORKDIR /app
+
+# Install Java (required for PySpark)
+RUN apt-get update && \
+    apt-get install -y openjdk-21-jre-headless && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Set Java home
+ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+
+# Upgrade pip and install Python dependencies with increased timeout
+COPY requirements_spark.txt .
+RUN pip install --upgrade pip && \
+    pip install --default-timeout=1000 --no-cache-dir -r requirements_spark.txt && \
+    rm -rf /root/.cache/pip
+
+# Copy the Spark consumer script
+COPY spark_consumer.py .
+
+# Default command
+CMD ["python", "spark_consumer.py"]

@@ -1,0 +1,14 @@
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements_producer.txt .
+RUN pip install --no-cache-dir -r requirements_producer.txt
+
+# Copy the producer script and dataset
+COPY kafka_producer.py .
+COPY yellow_tripdata_2015-01.csv .
+
+CMD ["python", "kafka_producer.py"]
+

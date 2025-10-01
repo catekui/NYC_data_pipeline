@@ -1,0 +1,183 @@
+version: '3.8'
+
+services:
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:9093'
+      KAFKA_LISTENERS: 'PLAINTEXT://kafka:29092,CONTROLLER://kafka:9093,PLAINTEXT_HOST://0.0.0.0:9092'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+      CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+      KAFKA_LOG4J_ROOT_LOGLEVEL: WARN
+      KAFKA_TOOLS_LOG4J_LOGLEVEL: ERROR
+    networks:
+      - data-pipeline
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "2"
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: Access
+      POSTGRES_DB: nyc_taxi_analytics
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - data-pipeline
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "2"
+    command: postgres -c log_statement=none -c log_duration=off
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  kafka-producer:
+    image: python:3.9-slim
+    container_name: kafka-producer
+    depends_on:
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./kafka_producer.py:/app/kafka_producer.py
+      - ./yellow_tripdata_2015-01.csv:/app/yellow_tripdata_2015-01.csv
+      - ./requirements_producer.txt:/app/requirements.txt
+    working_dir: /app
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      DATA_FILE_PATH: /app/yellow_tripdata_2015-01.csv
+      PYTHONUNBUFFERED: 1
+    networks:
+      - data-pipeline
+    command: bash -c "pip install --no-cache-dir -q -r requirements.txt && python kafka_producer.py"
+    restart: on-failure
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  spark-consumer:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM python:3.9-slim
+        RUN apt-get update && apt-get install -y openjdk-21-jre-headless procps && rm -rf /var/lib/apt/lists/*
+        ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+        WORKDIR /opt
+    container_name: spark-consumer
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./spark_consumer.py:/opt/spark_consumer.py
+      - ./requirements_spark.txt:/opt/requirements.txt
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: nyc_taxi_analytics
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: Access
+      PYTHONUNBUFFERED: 1
+    networks:
+      - data-pipeline
+    command: bash -c "pip install --no-cache-dir -q -r /opt/requirements.txt && python /opt/spark_consumer.py"
+    restart: on-failure
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  database-handler:
+    image: python:3.9-slim
+    container_name: database-handler
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./database_handler.py:/app/database_handler.py
+      - ./requirements_db.txt:/app/requirements.txt
+    working_dir: /app
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: nyc_taxi_analytics
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: Access
+      PYTHONUNBUFFERED: 1
+    networks:
+      - data-pipeline
+    command: bash -c "pip install --no-cache-dir -q -r requirements.txt && python database_handler.py"
+    restart: on-failure
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  streamlit:
+    image: python:3.9-slim
+    container_name: streamlit
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./streamlit.py:/app/streamlit.py
+      - ./requirements_streamlit.txt:/app/requirements.txt
+    working_dir: /app
+    ports:
+      - "8501:8501"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: nyc_taxi_analytics
+      DB_USER: postgres
+      DB_PASSWORD: Access
+      PYTHONUNBUFFERED: 1
+    networks:
+      - data-pipeline
+    command: bash -c "pip install --no-cache-dir -q -r requirements.txt && streamlit run streamlit.py --server.port=8501 --server.address=0.0.0.0"
+    restart: on-failure
+    logging:
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+networks:
+  data-pipeline:
+    driver: bridge
+
+volumes:
+  postgres-data:
