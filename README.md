@@ -1,9 +1,23 @@
 # Python Data Pipeline
 
-A streaming data pipeline using Python with Kafka, Spark, PostgreSQL, and Streamlit.
+A streaming data pipeline using Python with Kafka, Spark, PostgreSQL, and Streamlit.  
 
-Clone the repo:
+Clone the repository with:
 
-```bash
-git clone https://github.com/your-username/data-pipeline.git
-cd data-pipeline
+`git clone https://github.com/your-username/data-pipeline.git`  
+and move into the project folder with:
+
+`cd data-pipeline`
+
+The dataset comes from NYC Yellow Taxi Trip Data on Kaggle and should be placed in the `data/` folder. Once the dataset is in place, start the pipeline using Docker Compose:
+
+`docker-compose up --build`
+
+The Streamlit dashboard will be available at:
+
+`http://localhost:8501`
+
+You can follow logs for each container using:
+
+`docker-compose logs -f`
+
